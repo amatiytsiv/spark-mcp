@@ -2,13 +2,48 @@
 
 import sqlite3
 import json
+import os
 from pathlib import Path
 from typing import Optional, List, Dict, Any, Tuple
 from datetime import datetime
 
 
-SPARK_BASE = Path.home() / "Library/Containers/com.readdle.SparkDesktop.appstore/Data/Library/Application Support/Spark Desktop/core-data"
-SPARK_CACHE = Path.home() / "Library/Containers/com.readdle.SparkDesktop.appstore/Data/Library/Caches/Spark Desktop"
+def _resolve_spark_paths() -> tuple[Path, Path]:
+    """Detect Spark data and cache paths, supporting both Homebrew and App Store installs."""
+    home = Path.home()
+
+    # Environment variable overrides (for custom setups)
+    env_base = os.environ.get("SPARK_DATA_PATH")
+    env_cache = os.environ.get("SPARK_CACHE_PATH")
+    if env_base and env_cache:
+        return Path(env_base), Path(env_cache)
+
+    # Candidate paths: (base_path, cache_path)
+    candidates = [
+        # Homebrew / direct download (unsandboxed)
+        (
+            home / "Library/Application Support/Spark Desktop/core-data",
+            home / "Library/Caches/Spark Desktop",
+        ),
+        # Mac App Store (sandboxed)
+        (
+            home / "Library/Containers/com.readdle.SparkDesktop.appstore/Data/Library/Application Support/Spark Desktop/core-data",
+            home / "Library/Containers/com.readdle.SparkDesktop.appstore/Data/Library/Caches/Spark Desktop",
+        ),
+    ]
+
+    for base, cache in candidates:
+        if (base / "messages.sqlite").exists():
+            return base, cache
+
+    raise FileNotFoundError(
+        "Spark Desktop databases not found. Checked:\n"
+        + "\n".join(f"  - {base}" for base, _ in candidates)
+        + "\nSet SPARK_DATA_PATH and SPARK_CACHE_PATH environment variables for custom locations."
+    )
+
+
+SPARK_BASE, SPARK_CACHE = _resolve_spark_paths()
 
 
 class SparkDatabase:
